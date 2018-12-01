@@ -75,7 +75,8 @@ int main(int argc, char **argv)
     pid_t child_pid = 0;
     int last_optind = 0;
     bool found_cflag = false;
-    while ((option = getopt(argc, argv, "c:m:u:")))
+	int i = 1; // Indicates where to place cgroup in cgroups array
+    while ((option = getopt(argc, argv, "c:m:u:C:s:p:M:r:w:H")))
     {
         if (found_cflag)
             break;
@@ -98,6 +99,106 @@ int main(int argc, char **argv)
                 return EXIT_FAILURE;
             }
             break;
+		case 'C':
+			strcpy(cgroups[i]->control, CGRP_CPU_CONTROL);
+			strcpy(cgroups[i]->settings[0]->name, "cpu.shares");
+			strcpy(cgroups[i]->settings[0]->value, optarg);
+			cgroups[i]->settings[1] = &self_to_task;
+			cgroups[i]->settings[2] = NULL;
+			i++;
+			/*struct cgroups_control cpu_shares = {
+					.control = CGRP_CPU_CONTROL,
+					.settings = (struct cgroup_setting *[]) {
+						& (struct cgroup_setting) {
+							.name = "cpu.shares",
+							.value = CPU_SHARES
+						},
+						&self_to_task,
+						NULL
+					}
+			};
+			cgroups[optind - 1] = &cpu_shares;*/
+            break;
+        case 's':
+			strcpy(cgroups[i]->control, CGRP_CPU_SET_CONTROL);
+			strcpy(cgroups[i]->settings[0]->name, "cpuset.cpus");
+			strcpy(cgroups[i]->settings[0]->value, optarg);
+			strcpy(cgroups[i]->settings[1]->name, "cpuset.mem");
+			strcpy(cgroups[i]->settings[1]->value, "0");
+			cgroups[i]->settings[2] = &self_to_task;
+			cgroups[i]->settings[3] = NULL;
+			i++;
+			/*struct cgroups_control cpu_cores = {
+					.control = CGRP_CPU_SET_CONTROL,
+					.settings = (struct cgroup_setting *[]) {
+						&(struct cgroup_setting) {
+							.name = "cpuset.cpus",
+							.value = "0"
+						},
+						&self_to_task,
+						NULL
+					}
+			};
+			cgroups[optind - 1] = &cpu_cores;*/
+            break;
+        case 'p':
+			strcpy(cgroups[i]->control, CGRP_PIDS_CONTROL);
+			strcpy(cgroups[i]->settings[0]->name, "pids.max");
+			strcpy(cgroups[i]->settings[0]->value, optarg);
+			cgroups[i]->settings[1] = &self_to_task;
+			cgroups[i]->settings[2] = NULL;
+			i++;
+			/*struct cgroups_control max_pids = {
+					.control = CGRP_PIDS_CONTROL,
+					.settings = (struct cgroup_setting *[]) {
+						&(struct cgroup_setting) {
+							.name = "pids.max",
+							.value = PIDS
+						},
+						&self_to_task,
+						NULL
+					}
+			};
+			cgroups[optind - 1] = &max_pids;*/
+            break;
+        case 'M':
+			strcpy(cgroups[i]->control, CGRP_MEMORY_CONTROL);
+			strcpy(cgroups[i]->settings[0]->name, "memory.limit_in_bytes");
+			strcpy(cgroups[i]->settings[0]->value, optarg);
+			cgroups[i]->settings[1] = &self_to_task;
+			cgroups[i]->settings[2] = NULL;
+			i++;
+            break;
+        case 'r':
+			// Add new settings to blkio control group created above
+			for (int j = 0; j < 5; j++) { // Check for empty space in settings (4 possible settings)
+				if (strcmp(cgroup[0]->settings[j]->name, NULL) == 0) {
+					strcpy(cgroups[0]->settings[j]->name, "blkio.throttle.read_bps_device");
+					strcpy(cgroups[0]->settings[j]->value, optarg);
+					cgroups[0]->settings[j + 1] = NULL; // Add new NULL at the end of the array
+					i++;
+					break;
+				}
+			}
+			i++; // If setting is already found, skip to next flag
+            break;
+        case 'w':
+			// Add new settings to blkio control group created above
+			for (int j = 0; j < 5; j++) { // Check for empty space in settings (4 possible settings)
+				if (strcmp(cgroup[0]->settings[j]->name, NULL) == 0) {
+					strcpy(cgroups[0]->settings[j]->name, "blkio.throttle.write_bps_device");
+					strcpy(cgroups[0]->settings[j]->value, optarg);
+					cgroups[0]->settings[j + 1] = NULL; // Add new NULL at the end of the array
+					i++;
+					break;
+				}
+			}
+			i++; // If setting is already found, skip to next flag
+            break;
+        case 'H':
+            config.hostname = optarg;
+            break;
+
         default:
             cleanup_stuff(argv, sockets);
             return EXIT_FAILURE;
@@ -179,9 +280,13 @@ int main(int argc, char **argv)
      * HINT: Note that the 'child_function' expects struct of type child_config.
      * ------------------------------------------------------
      **/
+	char *stack = malloc(STACK_SIZE);
+	if (stack == NULL) {
+		return EXIT_FAILURE;
+	}
+	char *topStack = stack + STACK_SIZE; // Assuming stack grows downward
 
-        // You code for clone() goes here
-
+	child_pid = clone(child_function, topStack, CLONE_NEWNET | CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWCGROUP | CLONE_NEWIPC | SIGCHILD, config);
     /**
      *  ------------------------------------------------------
      **/ 

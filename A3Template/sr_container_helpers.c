@@ -17,6 +17,12 @@ int switch_child_root(const char *new_root, const char *put_old)
      *  Simply use the "pivot_root()" system call to switch child's root to the new root
      *  ------------------------------------------------------
      * */ 
+    
+     // no glibc wrapper for pivot_root(), use syscall instead
+    if (syscall(SYS_pivot_root, new_root, put_old) < 0){
+        fprintf(stderr, "failed!\n");
+        return -1;
+    } 
     return 0;
 }
 
@@ -38,6 +44,43 @@ int setup_child_capabilities()
      *      will indicate many capabilities. But after properly implementing this method if you run the same
      *      command inside your container you will see a smaller set of capabilities for [Bounding set]
      **/
+    int drop_caps[] {CAP_AUDIT_CONTROL, CAP_AUDIT_READ, CAP_AUDIT_WRITE, CAP_BLOCK_SUSPEND, CAP_DAC_READ_SEARCH, 
+                    CAP_FSETID, CAP_IPC_LOCK, CAP_MAC_ADMIN, CAP_MAC_OVERRIDE, CAP_MKNOD, CAP_SETFCAP, CAP_SYSLOG, 
+                    CAP_SYS_ADMIN, CAP_SYS_BOOT, CAP_SYS_MODULE, CAP_SYS_NICE, CAP_SYS_RAWIO, CAP_SYS_RESOURCE, 
+                    CAP_SYS_TIME, CAP_WAKE_ALARM};
+
+    size_t num_caps_to_drop = 20;
+
+    for (size_t i = 0; i < num_caps_to_drop; i++) {
+        if (prctl(PR_CAPBSET_DROP, drop_caps[i], 0, 0, 0)){
+            fprintf(stderr, "prctl failed: %m\n");
+            return 1;
+        }
+    }
+
+    cap_t caps = cap_get_proc();
+    if (caps == NULL) {
+        perror("cap_get_proc");
+        if (caps)
+            cap_free(caps);
+        return EXIT_FAILURE;
+    }
+
+    int clear_inh_set = cap_set_flag(caps, CAP_INHERITABLE, num_caps, drop_caps, CAP_CLEAR);
+    if (clear_inh_set) {
+        perror("cap_set_flag");
+        cap_free(caps);
+        return EXIT_FAILURE;
+    }
+
+    int set_cap_set = cap_set_proc(caps);
+    if (set_cap_set) {
+        perror("cap_set_proc");
+        cap_free(caps);
+        return EXIT_FAILURE;
+    }
+    cap_free(caps);
+
     return 0;
 }
 
@@ -49,7 +92,118 @@ int setup_child_capabilities()
  **/ 
 int setup_syscall_filters()
 {
+    scmp_filter_ctx seccomp_ctx = seccomp_init(SCMP_ACT_ALLOW);     
+    if (!seccomp_ctx) {
+        fprintf(stderr, "seccomp initialization failed: %m\n");
+        return EXIT_FAILURE;
+    }
+
+    // ptrace, mbind, migrate_pages, move_pages
+    int filter_set_status = seccomp_rule_add(seccomp_ctx, SCMP_FAIL, SCMP_SYS(ptrace), 0);
+    if (filter_set_status) {
+        if (seccomp_ctx)
+            seccomp_release(seccomp_ctx);
+        fprintf(stderr, "seccomp could not add KILL rule for 'ptrace': %m\n");
+        return EXIT_FAILURE;
+    }
+
+    filter_set_status = seccomp_rule_add(seccomp_ctx, SCMP_FAIL, SCMP_SYS(mbind), 0);
+    if (filter_set_status) {
+        if (seccomp_ctx)
+            seccomp_release(seccomp_ctx);
+        fprintf(stderr, "seccomp could not add KILL rule for 'mbind': %m\n");
+        return EXIT_FAILURE;
+    }
+
+    filter_set_status = seccomp_rule_add(seccomp_ctx, SCMP_FAIL, SCMP_SYS(mbind), 0);
+    if (filter_set_status) {
+        if (seccomp_ctx)
+            seccomp_release(seccomp_ctx);
+        fprintf(stderr, "seccomp could not add KILL rule for 'migrate_pages': %m\n");
+        return EXIT_FAILURE;
+    }
+
+    filter_set_status = seccomp_rule_add(seccomp_ctx, SCMP_FAIL, SCMP_SYS(migrate_pages), 0);
+    if (filter_set_status) {
+        if (seccomp_ctx)
+            seccomp_release(seccomp_ctx);
+        fprintf(stderr, "seccomp could not add KILL rule for 'migrate_pages': %m\n");
+        return EXIT_FAILURE;
+    }
+
+    filter_set_status = seccomp_rule_add(seccomp_ctx, SCMP_FAIL, SCMP_SYS(move_pages), 0);
+    if (filter_set_status) {
+        if (seccomp_ctx)
+            seccomp_release(seccomp_ctx);
+        fprintf(stderr, "seccomp could not add KILL rule for 'move_pages': %m\n");
+        return EXIT_FAILURE;
+    }
+
+    // unshare with CLONE_NEWUSER flag
+    filter_set_status = seccomp_rule_add(seccomp_ctx, SCMP_FAIL, SCMP_SYS(unshare), 
+                                        1, SCMP_A0(SCMP_CMP_MASKED_EQ, CLONE_NEWUSER, CLONE_NEWUSER));
+    if (filter_set_status) {
+        if (seccomp_ctx)
+            seccomp_release(seccomp_ctx);
+        fprintf(stderr, "seccomp could not add KILL rule for 'unshare': %m\n");
+        return EXIT_FAILURE;
+    }
+
+    // clone with CLONE_NEWUSER flag
+    // int clone(int (*fn)(void *), void *child_stack, int flags, void *arg, ...
+    filter_set_status = seccomp_rule_add(seccomp_ctx, SCMP_FAIL, SCMP_SYS(clone), 
+                                        1, SCMP_A2(SCMP_CMP_MASKED_EQ, CLONE_NEWUSER, CLONE_NEWUSER));
+    if (filter_set_status) {
+        if (seccomp_ctx)
+            seccomp_release(seccomp_ctx);
+        fprintf(stderr, "seccomp could not add KILL rule for 'clone': %m\n");
+        return EXIT_FAILURE;
+    }
+
+    // chmod with only S_ISUID or S_ISGID flags
+    // int chmod(const char *path, mode_t mode);
+    // NOT SURE HERE *****************
+    filter_set_status = seccomp_rule_add(seccomp_ctx, SCMP_FAIL, SCMP_SYS(chmod), 
+                                        1, SCMP_A1(SCMP_CMP_MASKED_EQ, S_ISGID|S_ISUID, S_ISGID|S_ISUID));
+    filter_set_status = seccomp_rule_add(seccomp_ctx, SCMP_FAIL, SCMP_SYS(chmod), 
+                                        2, SCMP_A1(SCMP_CMP_MASKED_EQ, S_ISGID, S_ISGID),
+                                        SCMP_A1(SCMP_CMP_MASKED_EQ, S_ISUID, S_ISUID));
+    //**********************
+    if (filter_set_status) {
+        if (seccomp_ctx)
+            seccomp_release(seccomp_ctx);
+        fprintf(stderr, "seccomp could not add KILL rule for 'chmod': %m\n");  
+        return EXIT_FAILURE;
+    }
+
+    /**
+     *  Set the 'SCMP_FLTATR_CTL_NNP' attribute on the newly created context
+     *  This attribute is used to ensure that the NO_NEW_PRIVS functionality is enabled 
+     *  This is to control previledge escalation of child processes spawned with exec() in a parent with lesser priviledge
+     *  You can just copy this and use it at the end of all seccomp rules.
+     **/
+    filter_set_status = seccomp_attr_set(seccomp_ctx, SCMP_FLTATR_CTL_NNP, 0);
+    if (filter_set_status) {
+        if (seccomp_ctx)
+            seccomp_release(seccomp_ctx);
+        fprintf(stderr, "seccomp could not set attribute 'SCMP_FLTATR_CTL_NNP': %m\n");
+        return EXIT_FAILURE;
+    }
+
+
+    /**
+     *  Finally load the created context into the kernel and release it from the current process memory
+     **/ 
+    filter_set_status = seccomp_load(seccomp_ctx);
+    if (filter_set_status) {
+        if (seccomp_ctx)
+            seccomp_release(seccomp_ctx);               // release from current process memory.
+        fprintf(stderr, "seccomp could not load the new context: %m\n");
+        return EXIT_FAILURE;
+    }
+
     return 0;
+
 }
 
 int setup_child_mounts(struct child_config *config)
