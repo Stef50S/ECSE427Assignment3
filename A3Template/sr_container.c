@@ -172,7 +172,7 @@ int main(int argc, char **argv)
         case 'r':
 			// Add new settings to blkio control group created above
 			for (int j = 0; j < 5; j++) { // Check for empty space in settings (4 possible settings)
-				if (strcmp(cgroups[0]->settings[j]->name, NULL) == 0) {
+				if (strcmp(cgroups[0]->settings[j]->name, "") == 0) {
 					strcpy(cgroups[0]->settings[j]->name, "blkio.throttle.read_bps_device");
 					strcpy(cgroups[0]->settings[j]->value, optarg);
 					cgroups[0]->settings[j + 1] = NULL; // Add new NULL at the end of the array
@@ -185,7 +185,7 @@ int main(int argc, char **argv)
         case 'w':
 			// Add new settings to blkio control group created above
 			for (int j = 0; j < 5; j++) { // Check for empty space in settings (4 possible settings)
-				if (strcmp(cgroup[0]->settings[j]->name, NULL) == 0) {
+				if (strcmp(cgroups[0]->settings[j]->name, "") == 0) {
 					strcpy(cgroups[0]->settings[j]->name, "blkio.throttle.write_bps_device");
 					strcpy(cgroups[0]->settings[j]->value, optarg);
 					cgroups[0]->settings[j + 1] = NULL; // Add new NULL at the end of the array

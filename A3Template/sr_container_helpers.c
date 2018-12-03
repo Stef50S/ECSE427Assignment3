@@ -66,7 +66,7 @@ int setup_child_capabilities()
         return EXIT_FAILURE;
     }
 
-    int clear_inh_set = cap_set_flag(caps, CAP_INHERITABLE, num_caps, drop_caps, CAP_CLEAR);
+    int clear_inh_set = cap_set_flag(caps, CAP_INHERITABLE, num_caps_to_drop, drop_caps, CAP_CLEAR);
     if (clear_inh_set) {
         perror("cap_set_flag");
         cap_free(caps);
