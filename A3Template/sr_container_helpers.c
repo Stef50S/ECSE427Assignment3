@@ -44,7 +44,7 @@ int setup_child_capabilities()
      *      will indicate many capabilities. But after properly implementing this method if you run the same
      *      command inside your container you will see a smaller set of capabilities for [Bounding set]
      **/
-    int drop_caps[] {CAP_AUDIT_CONTROL, CAP_AUDIT_READ, CAP_AUDIT_WRITE, CAP_BLOCK_SUSPEND, CAP_DAC_READ_SEARCH, 
+    int drop_caps[] = {CAP_AUDIT_CONTROL, CAP_AUDIT_READ, CAP_AUDIT_WRITE, CAP_BLOCK_SUSPEND, CAP_DAC_READ_SEARCH, 
                     CAP_FSETID, CAP_IPC_LOCK, CAP_MAC_ADMIN, CAP_MAC_OVERRIDE, CAP_MKNOD, CAP_SETFCAP, CAP_SYSLOG, 
                     CAP_SYS_ADMIN, CAP_SYS_BOOT, CAP_SYS_MODULE, CAP_SYS_NICE, CAP_SYS_RAWIO, CAP_SYS_RESOURCE, 
                     CAP_SYS_TIME, CAP_WAKE_ALARM};
