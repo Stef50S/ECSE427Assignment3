@@ -286,7 +286,7 @@ int main(int argc, char **argv)
 	}
 	char *topStack = stack + STACK_SIZE; // Assuming stack grows downward
 
-	child_pid = clone(child_function, topStack, CLONE_NEWNET | CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWCGROUP | CLONE_NEWIPC | SIGCHILD, config);
+	child_pid = clone(child_function, topStack, CLONE_NEWNET | CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWCGROUP | CLONE_NEWIPC | SIGCHILD, &config);
     /**
      *  ------------------------------------------------------
      **/ 
