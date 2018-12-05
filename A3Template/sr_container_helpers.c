@@ -162,13 +162,11 @@ int setup_syscall_filters()
 
     // chmod with only S_ISUID or S_ISGID flags
     // int chmod(const char *path, mode_t mode);
-    // NOT SURE HERE *****************
     filter_set_status = seccomp_rule_add(seccomp_ctx, SCMP_FAIL, SCMP_SYS(chmod), 
                                         1, SCMP_A1(SCMP_CMP_MASKED_EQ, S_ISGID|S_ISUID, S_ISGID|S_ISUID));
-    filter_set_status = seccomp_rule_add(seccomp_ctx, SCMP_FAIL, SCMP_SYS(chmod), 
-                                        2, SCMP_A1(SCMP_CMP_MASKED_EQ, S_ISGID, S_ISGID),
-                                        SCMP_A1(SCMP_CMP_MASKED_EQ, S_ISUID, S_ISUID));
-    //**********************
+    //filter_set_status = seccomp_rule_add(seccomp_ctx, SCMP_FAIL, SCMP_SYS(chmod), 
+                                        //2, SCMP_A1(SCMP_CMP_MASKED_EQ, S_ISGID, S_ISGID),
+                                        //SCMP_A1(SCMP_CMP_MASKED_EQ, S_ISUID, S_ISUID));
     if (filter_set_status) {
         if (seccomp_ctx)
             seccomp_release(seccomp_ctx);

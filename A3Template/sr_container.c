@@ -76,7 +76,8 @@ int main(int argc, char **argv)
     int last_optind = 0;
     bool found_cflag = false;
 	int i = 1; // Indicates where to place cgroup in cgroups array
-    while ((option = getopt(argc, argv, "c:m:u:C:s:p:M:r:w:H")))
+	bool blkio_settings = false; // Indicates whether origina blkio settings (see above) were set 
+    while ((option = getopt(argc, argv, "c:m:u:C:s:p:M:r:w:H:")))
     {
         if (found_cflag)
             break;
@@ -100,69 +101,46 @@ int main(int argc, char **argv)
             }
             break;
 		case 'C':
+            cgroups[i] = (struct cgroups_control *)malloc(sizeof(cgroups[0]));
 			strcpy(cgroups[i]->control, CGRP_CPU_CONTROL);
-			strcpy(cgroups[i]->settings[0]->name, "cpu.shares");
+            cgroups[i]->settings = (struct cgroup_setting **)calloc(3, sizeof(cgroups[0]->settings));
+			cgroups[i]->settings[0] = (struct cgroup_setting *)malloc(256);
+            strcpy(cgroups[i]->settings[0]->name, "cpu.shares");
 			strcpy(cgroups[i]->settings[0]->value, optarg);
 			cgroups[i]->settings[1] = &self_to_task;
 			cgroups[i]->settings[2] = NULL;
 			i++;
-			/*struct cgroups_control cpu_shares = {
-					.control = CGRP_CPU_CONTROL,
-					.settings = (struct cgroup_setting *[]) {
-						& (struct cgroup_setting) {
-							.name = "cpu.shares",
-							.value = CPU_SHARES
-						},
-						&self_to_task,
-						NULL
-					}
-			};
-			cgroups[optind - 1] = &cpu_shares;*/
             break;
         case 's':
-			strcpy(cgroups[i]->control, CGRP_CPU_SET_CONTROL);
+            cgroups[i] = (struct cgroups_control *)malloc(sizeof(cgroups[0]));
+            strcpy(cgroups[i]->control, CGRP_CPU_SET_CONTROL);
+            cgroups[i]->settings = (struct cgroup_setting **)calloc(4, sizeof(cgroups[0]->settings));
+            cgroups[i]->settings[0] = (struct cgroup_setting *)malloc(256);
+            cgroups[i]->settings[1] = (struct cgroup_setting *)malloc(256);
 			strcpy(cgroups[i]->settings[0]->name, "cpuset.cpus");
 			strcpy(cgroups[i]->settings[0]->value, optarg);
-			strcpy(cgroups[i]->settings[1]->name, "cpuset.mem");
+			strcpy(cgroups[i]->settings[1]->name, "cpuset.mems");
 			strcpy(cgroups[i]->settings[1]->value, "0");
 			cgroups[i]->settings[2] = &self_to_task;
 			cgroups[i]->settings[3] = NULL;
 			i++;
-			/*struct cgroups_control cpu_cores = {
-					.control = CGRP_CPU_SET_CONTROL,
-					.settings = (struct cgroup_setting *[]) {
-						&(struct cgroup_setting) {
-							.name = "cpuset.cpus",
-							.value = "0"
-						},
-						&self_to_task,
-						NULL
-					}
-			};
-			cgroups[optind - 1] = &cpu_cores;*/
             break;
         case 'p':
-			strcpy(cgroups[i]->control, CGRP_PIDS_CONTROL);
+            cgroups[i] = (struct cgroups_control *)malloc(sizeof(cgroups[0]));
+            strcpy(cgroups[i]->control, CGRP_PIDS_CONTROL);
+            cgroups[i]->settings = (struct cgroup_setting **)calloc(3, sizeof(cgroups[0]->settings));
+			cgroups[i]->settings[0] = (struct cgroup_setting *)malloc(256);
 			strcpy(cgroups[i]->settings[0]->name, "pids.max");
 			strcpy(cgroups[i]->settings[0]->value, optarg);
 			cgroups[i]->settings[1] = &self_to_task;
 			cgroups[i]->settings[2] = NULL;
 			i++;
-			/*struct cgroups_control max_pids = {
-					.control = CGRP_PIDS_CONTROL,
-					.settings = (struct cgroup_setting *[]) {
-						&(struct cgroup_setting) {
-							.name = "pids.max",
-							.value = PIDS
-						},
-						&self_to_task,
-						NULL
-					}
-			};
-			cgroups[optind - 1] = &max_pids;*/
             break;
         case 'M':
-			strcpy(cgroups[i]->control, CGRP_MEMORY_CONTROL);
+            cgroups[i] = (struct cgroups_control *)malloc(sizeof(cgroups[0]));
+            strcpy(cgroups[i]->control, CGRP_MEMORY_CONTROL);
+            cgroups[i]->settings = (struct cgroup_setting **)calloc(3, sizeof(cgroups[0]->settings));
+			cgroups[i]->settings[0] = (struct cgroup_setting *)malloc(256);
 			strcpy(cgroups[i]->settings[0]->name, "memory.limit_in_bytes");
 			strcpy(cgroups[i]->settings[0]->value, optarg);
 			cgroups[i]->settings[1] = &self_to_task;
@@ -170,33 +148,70 @@ int main(int argc, char **argv)
 			i++;
             break;
         case 'r':
-			// Add new settings to blkio control group created above
-			for (int j = 0; j < 5; j++) { // Check for empty space in settings (4 possible settings)
-				if (strcmp(cgroups[0]->settings[j]->name, "") == 0) {
-					strcpy(cgroups[0]->settings[j]->name, "blkio.throttle.read_bps_device");
-					strcpy(cgroups[0]->settings[j]->value, optarg);
-					cgroups[0]->settings[j + 1] = NULL; // Add new NULL at the end of the array
-					i++;
-					break;
-				}
+			if (!blkio_settings) { // Replace the settings array in blkio cgroup struct
+				cgroups[0]->settings = (struct cgroup_setting **)calloc(5, sizeof(struct cgroup_setting *));
+				cgroups[0]->settings[0] = (struct cgroup_setting *)malloc(sizeof(struct cgroup_setting));
+				strcpy(cgroups[0]->settings[0]->name, "blkio.weight");
+				strcpy(cgroups[0]->settings[0]->value, "64");
+				cgroups[0]->settings[1] = &self_to_task;
+				cgroups[0]->settings[2] = (struct cgroup_setting *)malloc(sizeof(struct cgroup_setting));
+				strcpy(cgroups[0]->settings[2]->name, "blkio.throttle.read_bps_device");
+				strcpy(cgroups[0]->settings[2]->value, optarg);
+				cgroups[0]->settings[3] = NULL;
+				cgroups[0]->settings[4] = NULL;
+				blkio_settings = true;
+				i++;
+				break;
 			}
-			i++; // If setting is already found, skip to next flag
-            break;
+			else {
+				for (int j = 0; j < 5; j++) { // Check for empty space in settings (4 possible settings plus NULL)
+					if (cgroups[0]->settings[j] == NULL) {
+						cgroups[0]->settings[j] = (struct cgroup_setting *)malloc(sizeof(struct cgroup_setting));
+						strcpy(cgroups[0]->settings[j]->name, "blkio.throttle.read_bps_device");
+						strcpy(cgroups[0]->settings[j]->value, optarg);
+						//cgroups[0]->settings[j + 1] = (struct cgroup_setting *)malloc(256);
+						//cgroups[0]->settings[j + 1] = NULL; // Add new NULL at the end of the array
+						i++;
+						break;
+					}
+				}
+				i++; // If setting is already found, skip to next flag
+				break;
+			}
         case 'w':
-			// Add new settings to blkio control group created above
-			for (int j = 0; j < 5; j++) { // Check for empty space in settings (4 possible settings)
-				if (strcmp(cgroups[0]->settings[j]->name, "") == 0) {
-					strcpy(cgroups[0]->settings[j]->name, "blkio.throttle.write_bps_device");
-					strcpy(cgroups[0]->settings[j]->value, optarg);
-					cgroups[0]->settings[j + 1] = NULL; // Add new NULL at the end of the array
-					i++;
-					break;
-				}
+			if (!blkio_settings) { // Replace the settings array in blkio cgroup struct
+				cgroups[0]->settings = (struct cgroup_setting **)calloc(5, sizeof(struct cgroup_setting *));
+				cgroups[0]->settings[0] = (struct cgroup_setting *)malloc(sizeof(struct cgroup_setting));
+				strcpy(cgroups[0]->settings[0]->name, "blkio.weight");
+				strcpy(cgroups[0]->settings[0]->value, "64");
+				cgroups[0]->settings[1] = &self_to_task;
+				cgroups[0]->settings[2] = (struct cgroup_setting *)malloc(sizeof(struct cgroup_setting));
+				strcpy(cgroups[0]->settings[2]->name, "blkio.throttle.write_bps_device");
+				strcpy(cgroups[0]->settings[2]->value, optarg);
+				cgroups[0]->settings[3] = NULL;
+				cgroups[0]->settings[4] = NULL;
+				blkio_settings = true;
+				i++;
+				break;
 			}
-			i++; // If setting is already found, skip to next flag
-            break;
+			else {
+				for (int j = 0; j < 5; j++) { // Check for empty space in settings (4 possible settings plus NULL)
+					if (cgroups[0]->settings[j] == NULL) {
+						cgroups[0]->settings[j] = (struct cgroup_setting *)malloc(sizeof(struct cgroup_setting));
+						strcpy(cgroups[0]->settings[j]->name, "blkio.throttle.write_bps_device");
+						strcpy(cgroups[0]->settings[j]->value, optarg);
+						//cgroups[0]->settings[j + 1] = (struct cgroup_setting *)malloc(256);
+						//cgroups[0]->settings[j + 1] = NULL; // Add new NULL at the end of the array
+						i++;
+						break;
+					}
+				}
+				i++; // If setting is already found, skip to next flag
+				break;
+			}
         case 'H':
-            config.hostname = optarg;
+            config.hostname = malloc(strlen(optarg));
+            strcpy(config.hostname, optarg);
             break;
 
         default:
